@@ -302,3 +302,23 @@ Pipelines上でCloud Runを呼び出すという意味でしょうか？
   2. 依存パッケージをインストール：pip install -r requirements.txt
   3. 小規模データでテスト実行
   4. パラメータをチューニングして本番実行
+-------------------------------------------------------------------------
+
+> 「pip install -r requirements.txt」をuvで行う方法を教えて
+
+● uv pip install -r requirements.txt
+
+  または仮想環境を作成してからインストール：
+
+  uv venv
+  source .venv/bin/activate  # Windowsの場合: .venv\Scripts\activate
+  uv pip install -r requirements.txt
+
+  uvのプロジェクト管理機能を使う場合：
+
+  # pyproject.tomlがある場合
+  uv sync
+
+  # または直接依存関係を追加
+  uv add kfp google-cloud-aiplatform google-cloud-bigquery
+  google-cloud-spanner google-auth
