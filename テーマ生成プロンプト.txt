@@ -1,0 +1,304 @@
+GCP上でBigQueryに登録された3万件のデータをユーザプロンプトとしてLLMを呼び出し、データ1件あたり6件のテーマ名を生成させて、結果をSpannerに登録する処理を
+Vertex AI Pipelinesを使用して行いたいです。
+この場合処理時間を短縮する為の方法としてどのようなものがあるでしょうか？
+
+この場合、Vertex AI Pipelines上で同じ処理を並列実行することで処理時間を短縮することは可能でしょうか？
+---------------------------------------------------------------------------------------------------------------------
+● GCPでVertex AI
+  Pipelinesを使用した大規模LLM処理の高速化方法は以下の通りです：
+
+  1. 並列処理の実装
+
+  - データを分割（例：300バッチ ×
+  100件）してパイプラインコンポーネントを並列実行
+  - Vertex AI PipelinesのParallelForやカスタムコンポーネントで並列度を制御
+  - Cloud Runジョブで複数インスタンスを起動し、各インスタンスでマルチスレッ
+  ド/非同期処理
+
+  2. LLM呼び出しの最適化
+
+  - Vertex AI Batch Prediction
+  APIを使用（非同期バッチ処理、コスト削減も可能）
+  - 非同期リクエスト（asyncio）で複数のLLM呼び出しを並行実行
+  - Gemini APIの場合、RPM/TPM制限を考慮してレート制限を設定
+  - プロンプトを簡潔化してトークン数削減
+
+  3. データベースアクセスの最適化
+
+  - BigQuery:
+  LIMITとOFFSETで分割読み込み、またはテーブルパーティショニング活用
+  - Spanner:
+  バッチ挿入（batch_insert）やミューテーションのバッチ処理で書き込み効率化
+
+  4. Vertex AI Pipelines設計
+
+  - データ分割コンポーネント → 並列LLM処理コンポーネント →
+  結果集約コンポーネント
+  - コンポーネントキャッシングを有効化（再実行時の高速化）
+  - 軽量なコンテナイメージを使用
+
+  5. リソース最適化
+
+  - Cloud Runのインスタンス数上限を増やす（--max-instances）
+  - CPU/メモリを適切に設定（I/O待ちが多い場合はCPUよりメモリ重視）
+
+  6. エラーハンドリング
+
+  - リトライ処理を実装（LLM APIの一時的なエラー対策）
+  - 部分的な失敗でも処理を継続できる設計
+
+  推奨アーキテクチャ例：
+  1. BigQueryから100件ずつ300バッチに分割
+  2. 各バッチを並列処理（Cloud Runで30-50並列）
+  3. 各インスタンス内で非同期に10-20件のLLM呼び出し
+  4. 結果を100件単位でSpannerにバッチ挿入
+
+  この構成で処理時間を大幅に短縮できます。
+----------------------------------------------------------------------------------------------------------------------
+> 「 2. 各バッチを並列処理（Cloud Runで30-50並列）」とありますが、Vertex AI
+Pipelines上でCloud Runを呼び出すという意味でしょうか？
+
+● 説明が不明確でした。以下の2つのアプローチがあります：
+
+  アプローチ1：Vertex AI Pipelines内で並列実行
+
+  Vertex AI PipelinesのParallelFor機能を使って、パイプラインコンポーネント自
+  体を並列実行します。
+  from kfp import dsl
+
+  @dsl.pipeline
+  def my_pipeline():
+      batches = create_batches()  # 300バッチ作成
+
+      # 並列実行（各コンポーネントはKubernetes Pod上で実行）
+      with dsl.ParallelFor(batches) as batch:
+          process_batch(batch)  # LLM呼び出し→Spanner登録
+  - 各コンポーネントはKubernetes Podとして実行されます（Cloud
+  Runではありません）
+  - 並列度は自動調整されますが、リソース制限に注意
+
+  アプローチ2：PipelinesからCloud Runジョブを呼び出し
+
+  パイプラインコンポーネントの中でCloud Run Jobs
+  APIを呼び出して並列実行します。
+  @dsl.component
+  def trigger_cloud_run_jobs():
+      # Cloud Run Jobs APIで複数ジョブを並列起動
+      for batch in batches:
+          cloud_run_client.create_job(...)
+
+  推奨
+
+  アプローチ1がシンプルです。Vertex AI Pipelinesの並列機能だけで完結します。
+
+  Cloud
+  Runを使う必要があるのは、より細かいスケーリング制御や長時間実行（Pipelines
+   Pod制限回避）が必要な場合です。
+
+  どちらのアプローチを想定されていますか？
+----------------------------------------------------------------------------------------------------------------------
+
+> アプローチ１を試したいです。
+
+● アプローチ1の実装例を提供します。以下がVertex AI
+  PipelinesでParallelForを使った実装の流れです：
+
+  実装ステップ
+
+  1. 必要なコンポーネント
+
+  from kfp import dsl
+  from kfp.dsl import Output, Dataset, Input
+  from google.cloud.aiplatform import pipeline_jobs
+  import vertexai
+
+  # BigQueryからデータを分割取得
+  @dsl.component(base_image="python:3.10",
+  packages_to_install=["google-cloud-bigquery"])
+  def create_batches(
+      project_id: str,
+      dataset_id: str,
+      table_id: str,
+      batch_size: int,
+      batches: Output[Dataset]
+  ):
+      from google.cloud import bigquery
+      import json
+
+      client = bigquery.Client(project=project_id)
+      query = f"SELECT COUNT(*) as cnt FROM
+  `{project_id}.{dataset_id}.{table_id}`"
+      total_count = list(client.query(query))[0].cnt
+
+      batch_list = []
+      for offset in range(0, total_count, batch_size):
+          batch_list.append({"offset": offset, "limit": batch_size})
+
+      with open(batches.path, 'w') as f:
+          json.dump(batch_list, f)
+
+  # 各バッチを処理
+  @dsl.component(
+      base_image="python:3.10",
+      packages_to_install=[
+          "google-cloud-bigquery",
+          "google-cloud-spanner",
+          "google-cloud-aiplatform",
+          "vertexai"
+      ]
+  )
+  def process_batch(
+      project_id: str,
+      dataset_id: str,
+      table_id: str,
+      spanner_instance: str,
+      spanner_database: str,
+      offset: int,
+      limit: int,
+      model_name: str = "gemini-1.5-flash"
+  ):
+      from google.cloud import bigquery, spanner
+      import vertexai
+      from vertexai.generative_models import GenerativeModel
+      import asyncio
+
+      # BigQueryからデータ取得
+      bq_client = bigquery.Client(project=project_id)
+      query = f"""
+          SELECT * FROM `{project_id}.{dataset_id}.{table_id}`
+          LIMIT {limit} OFFSET {offset}
+      """
+      rows = list(bq_client.query(query))
+
+      # Vertex AI初期化
+      vertexai.init(project=project_id)
+      model = GenerativeModel(model_name)
+
+      # 非同期でLLM呼び出し
+      async def generate_themes(row):
+          prompt = f"以下のデータから6つのテーマを生成してください: {row}"
+          response = await model.generate_content_async(prompt)
+          # レスポンスからテーマを抽出（JSON形式を想定）
+          return {"id": row.get("id"), "themes": response.text}
+
+      async def process_all():
+          tasks = [generate_themes(row) for row in rows]
+          return await asyncio.gather(*tasks)
+
+      results = asyncio.run(process_all())
+
+      # Spannerに書き込み
+      spanner_client = spanner.Client(project=project_id)
+      instance = spanner_client.instance(spanner_instance)
+      database = instance.database(spanner_database)
+
+      with database.batch() as batch:
+          for result in results:
+              batch.insert(
+                  table="themes_table",
+                  columns=["id", "themes"],
+                  values=[[result["id"], result["themes"]]]
+              )
+
+  # パイプライン定義
+  @dsl.pipeline(name="bigquery-llm-spanner-pipeline")
+  def llm_pipeline(
+      project_id: str,
+      dataset_id: str,
+      table_id: str,
+      spanner_instance: str,
+      spanner_database: str,
+      batch_size: int = 100
+  ):
+      # バッチ作成
+      batches_task = create_batches(
+          project_id=project_id,
+          dataset_id=dataset_id,
+          table_id=table_id,
+          batch_size=batch_size
+      )
+
+      # 並列処理
+      with dsl.ParallelFor(
+          items=batches_task.outputs["batches"],
+          parallelism=50  # 最大並列数
+      ) as batch:
+          process_batch(
+              project_id=project_id,
+              dataset_id=dataset_id,
+              table_id=table_id,
+              spanner_instance=spanner_instance,
+              spanner_database=spanner_database,
+              offset=batch.offset,
+              limit=batch.limit
+          )
+
+  2. パイプライン実行
+
+  from kfp import compiler
+
+  # パイプラインをコンパイル
+  compiler.Compiler().compile(
+      pipeline_func=llm_pipeline,
+      package_path="llm_pipeline.json"
+  )
+
+  # 実行
+  from google.cloud.aiplatform import PipelineJob
+
+  job = PipelineJob(
+      display_name="llm-theme-generation",
+      template_path="llm_pipeline.json",
+      parameter_values={
+          "project_id": "your-project-id",
+          "dataset_id": "your_dataset",
+          "table_id": "your_table",
+          "spanner_instance": "your-instance",
+          "spanner_database": "your-database",
+          "batch_size": 100
+      },
+      location="asia-northeast1"
+  )
+
+  job.run()
+
+  ポイント
+
+  - parallelism=50で最大並列数を制御
+  - 各コンポーネント内でasyncioを使って非同期LLM呼び出し
+  - Spannerのbatch()で効率的な書き込み
+
+  このコードをベースに実装を始められますか？必要であればファイルとして作成す
+  ることもできます。
+--------------------------------------------------------------------------------------------
+● 以下のファイルを作成しました：
+
+  作成ファイル
+
+  1. pipeline.py - Vertex AI Pipelinesの実装コード
+    - create_batches: バッチ分割コンポーネント
+    - process_batch: LLM呼び出し＋Spanner登録
+    - llm_theme_generation_pipeline: パイプライン定義
+    - 実行関数とコンパイル関数を含む
+  2. DESIGN.md - 設計ドキュメント
+    - アーキテクチャ概要
+    - 処理時間短縮のための6つの最適化手法
+    - パラメータチューニングガイド
+    - 処理時間見積もり
+    - 代替アプローチ（Batch API、Dataflowなど）
+  3. README.md - セットアップと使い方
+    - 環境準備手順
+    - 実行方法
+    - トラブルシューティング
+    - コスト見積もり
+  4. run_pipeline.py - 実行スクリプト
+    - 設定値を変更するだけで実行可能
+    - 確認プロンプト付き
+  5. requirements.txt - 依存パッケージ
+
+  次のステップ
+
+  1. run_pipeline.pyの設定値を実際の環境に合わせて編集
+  2. 依存パッケージをインストール：pip install -r requirements.txt
+  3. 小規模データでテスト実行
+  4. パラメータをチューニングして本番実行
