@@ -11,17 +11,17 @@ from pipeline import run_pipeline
 # ========================================
 
 # GCP設定
-PROJECT_ID = "your-project-id"
+PROJECT_ID = "gen-lang-client-0471694923"
 LOCATION = "asia-northeast1"
-PIPELINE_ROOT = "gs://your-bucket-name/pipeline-root"
+PIPELINE_ROOT = "gs://try_theme_generator/pipeline-root"
 
 # BigQuery設定
-DATASET_ID = "your_dataset"
-TABLE_ID = "your_table"
+DATASET_ID = "theme_generator"
+TABLE_ID = "test_data"
 
 # Spanner設定
-SPANNER_INSTANCE = "your-spanner-instance"
-SPANNER_DATABASE = "your-spanner-database"
+SPANNER_INSTANCE = "try-theme-generator-instance"
+SPANNER_DATABASE = "try-theme-generator-database"
 SPANNER_TABLE = "themes_table"
 
 # パイプライン設定
@@ -47,7 +47,7 @@ if __name__ == "__main__":
 
     # 確認
     response = input("\n上記の設定で実行しますか？ (yes/no): ")
-    if response.lower() not in ['yes', 'y']:
+    if response.lower() not in ["yes", "y"]:
         print("実行をキャンセルしました。")
         exit(0)
 
@@ -66,7 +66,7 @@ if __name__ == "__main__":
             location=LOCATION,
             batch_size=BATCH_SIZE,
             max_parallelism=MAX_PARALLELISM,
-            model_name=MODEL_NAME
+            model_name=MODEL_NAME,
         )
 
         print("\n" + "=" * 60)

@@ -9,6 +9,7 @@ BigQueryのデータからVertex AI LLMでテーマを生成し、Spannerに保�
 ├── pipeline.py          # Vertex AI Pipelinesの実装
 ├── DESIGN.md           # 設計ドキュメント（アーキテクチャ・最適化手法）
 ├── run_pipeline.py     # 実行スクリプト
+├── insert_test_data.py # テストデータ挿入スクリプト
 └── requirements.txt    # 依存パッケージ
 ```
 
@@ -16,15 +17,21 @@ BigQueryのデータからVertex AI LLMでテーマを生成し、Spannerに保�
 
 ### 1. 依存パッケージのインストール
 
+#### pipを使用する場合
 ```bash
 pip install -r requirements.txt
+```
+
+#### uvを使用する場合
+```bash
+uv pip install -r requirements.txt
 ```
 
 ### 2. GCP認証
 
 ```bash
 gcloud auth application-default login
-gcloud config set project YOUR_PROJECT_ID
+gcloud config set project gen-lang-client-0471694923
 ```
 
 ### 3. 環境準備
@@ -45,15 +52,31 @@ CREATE TABLE themes_table (
 #### GCSバケット作成
 
 ```bash
-gsutil mb -l asia-northeast1 gs://your-bucket-name
+gsutil mb -l asia-northeast1 gs://try_theme_generator
 ```
 
 ## 実行方法
 
+### テストデータの挿入
+
+BigQueryにテストデータ（旅行関連のサマリ30000件）を挿入する場合：
+
+```bash
+# pipを使用する場合
+python insert_test_data.py
+
+# uvを使用する場合
+uv run insert_test_data.py
+```
+
 ### パイプラインのコンパイルのみ
 
 ```bash
+# pipを使用する場合
 python pipeline.py
+
+# uvを使用する場合
+uv run pipeline.py
 ```
 
 これにより `llm_pipeline.json` が生成されます。
@@ -61,7 +84,11 @@ python pipeline.py
 ### パイプラインの実行
 
 ```bash
+# pipを使用する場合
 python run_pipeline.py
+
+# uvを使用する場合
+uv run run_pipeline.py
 ```
 
 または直接Pythonコードで：
