@@ -26,8 +26,7 @@ SPANNER_TABLE = "themes_table"
 
 # パイプライン設定
 BATCH_SIZE = 100  # 1バッチあたりの処理件数
-MAX_PARALLELISM = 50  # 最大並列実行数
-MODEL_NAME = "gemini-1.5-flash"  # 使用するLLMモデル
+MODEL_NAME = "gemini-2.5-flash-001"  # 使用するLLMモデル
 
 # ========================================
 # 実行
@@ -41,7 +40,7 @@ if __name__ == "__main__":
     print(f"BigQuery: {PROJECT_ID}.{DATASET_ID}.{TABLE_ID}")
     print(f"Spanner: {SPANNER_INSTANCE}/{SPANNER_DATABASE}/{SPANNER_TABLE}")
     print(f"バッチサイズ: {BATCH_SIZE}")
-    print(f"最大並列数: {MAX_PARALLELISM}")
+    print(f"最大並列数: 50 (固定)")
     print(f"モデル: {MODEL_NAME}")
     print("=" * 60)
 
@@ -65,7 +64,6 @@ if __name__ == "__main__":
             pipeline_root=PIPELINE_ROOT,
             location=LOCATION,
             batch_size=BATCH_SIZE,
-            max_parallelism=MAX_PARALLELISM,
             model_name=MODEL_NAME,
         )
 

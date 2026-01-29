@@ -4,7 +4,6 @@ BigQuery -> LLM (Vertex AI) -> Spanner
 """
 
 from kfp import dsl
-from kfp.dsl import Output, Dataset, Input
 from kfp import compiler
 from google.cloud.aiplatform import PipelineJob
 
@@ -15,12 +14,10 @@ def create_batches(
     project_id: str,
     dataset_id: str,
     table_id: str,
-    batch_size: int,
-    batches: Output[Dataset]
-):
+    batch_size: int
+) -> list:
     """BigQueryのデータをバッチに分割"""
     from google.cloud import bigquery
-    import json
 
     client = bigquery.Client(project=project_id)
     query = f"SELECT COUNT(*) as cnt FROM `{project_id}.{dataset_id}.{table_id}`"
@@ -30,8 +27,7 @@ def create_batches(
     for offset in range(0, total_count, batch_size):
         batch_list.append({"offset": offset, "limit": batch_size})
 
-    with open(batches.path, 'w') as f:
-        json.dump(batch_list, f)
+    return batch_list
 
 
 # 各バッチを処理
@@ -53,7 +49,7 @@ def process_batch(
     offset: int,
     limit: int,
     location: str = "asia-northeast1",
-    model_name: str = "gemini-1.5-flash"
+    model_name: str = "gemini-2.5-flash-001"
 ):
     """1バッチのデータを処理：BigQuery取得 -> LLM呼び出し -> Spanner登録"""
     from google.cloud import bigquery, spanner
@@ -159,9 +155,8 @@ def llm_theme_generation_pipeline(
     spanner_database: str,
     spanner_table: str,
     batch_size: int = 100,
-    max_parallelism: int = 50,
     location: str = "asia-northeast1",
-    model_name: str = "gemini-1.5-flash"
+    model_name: str = "gemini-2.5-flash-001"
 ):
     """
     パイプラインのメイン定義
@@ -174,7 +169,6 @@ def llm_theme_generation_pipeline(
         spanner_database: Spannerデータベース名
         spanner_table: Spannerテーブル名
         batch_size: 1バッチあたりの処理件数
-        max_parallelism: 最大並列実行数
         location: リージョン
         model_name: 使用するLLMモデル名
     """
@@ -188,8 +182,8 @@ def llm_theme_generation_pipeline(
 
     # 並列処理
     with dsl.ParallelFor(
-        items=batches_task.outputs["batches"],
-        parallelism=max_parallelism  # 最大並列数
+        items=batches_task.output,
+        parallelism=50  # 最大並列数
     ) as batch:
         process_batch(
             project_id=project_id,
@@ -224,8 +218,7 @@ def run_pipeline(
     pipeline_root: str,
     location: str = "asia-northeast1",
     batch_size: int = 100,
-    max_parallelism: int = 50,
-    model_name: str = "gemini-1.5-flash"
+    model_name: str = "gemini-2.5-flash-001"
 ):
     """パイプラインを実行"""
 
@@ -245,7 +238,6 @@ def run_pipeline(
             "spanner_database": spanner_database,
             "spanner_table": spanner_table,
             "batch_size": batch_size,
-            "max_parallelism": max_parallelism,
             "location": location,
             "model_name": model_name
         },
@@ -272,6 +264,5 @@ if __name__ == "__main__":
     #     spanner_database="your-database",
     #     spanner_table="themes_table",
     #     pipeline_root="gs://your-bucket/pipeline-root",
-    #     batch_size=100,
-    #     max_parallelism=50
+    #     batch_size=100
     # )
