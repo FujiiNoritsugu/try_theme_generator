@@ -1,0 +1,341 @@
+{
+  "components": {
+    "comp-create-batches": {
+      "executorLabel": "exec-create-batches",
+      "inputDefinitions": {
+        "parameters": {
+          "batch_size": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "dataset_id": {
+            "parameterType": "STRING"
+          },
+          "project_id": {
+            "parameterType": "STRING"
+          },
+          "table_id": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "parameters": {
+          "Output": {
+            "parameterType": "LIST"
+          }
+        }
+      }
+    },
+    "comp-for-loop-1": {
+      "dag": {
+        "tasks": {
+          "process-batch": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-process-batch"
+            },
+            "inputs": {
+              "parameters": {
+                "dataset_id": {
+                  "componentInputParameter": "pipelinechannel--dataset_id"
+                },
+                "limit": {
+                  "componentInputParameter": "pipelinechannel--create-batches-Output-loop-item",
+                  "parameterExpressionSelector": "parseJson(string_value)[\"limit\"]"
+                },
+                "location": {
+                  "componentInputParameter": "pipelinechannel--location"
+                },
+                "model_name": {
+                  "componentInputParameter": "pipelinechannel--model_name"
+                },
+                "offset": {
+                  "componentInputParameter": "pipelinechannel--create-batches-Output-loop-item",
+                  "parameterExpressionSelector": "parseJson(string_value)[\"offset\"]"
+                },
+                "project_id": {
+                  "componentInputParameter": "pipelinechannel--project_id"
+                },
+                "spanner_database": {
+                  "componentInputParameter": "pipelinechannel--spanner_database"
+                },
+                "spanner_instance": {
+                  "componentInputParameter": "pipelinechannel--spanner_instance"
+                },
+                "spanner_table": {
+                  "componentInputParameter": "pipelinechannel--spanner_table"
+                },
+                "table_id": {
+                  "componentInputParameter": "pipelinechannel--table_id"
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "process-batch"
+            }
+          }
+        }
+      },
+      "inputDefinitions": {
+        "parameters": {
+          "pipelinechannel--create-batches-Output": {
+            "parameterType": "LIST"
+          },
+          "pipelinechannel--create-batches-Output-loop-item": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--dataset_id": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--location": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--model_name": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--project_id": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--spanner_database": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--spanner_instance": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--spanner_table": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--table_id": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-process-batch": {
+      "executorLabel": "exec-process-batch",
+      "inputDefinitions": {
+        "parameters": {
+          "dataset_id": {
+            "parameterType": "STRING"
+          },
+          "limit": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "location": {
+            "defaultValue": "asia-northeast1",
+            "isOptional": true,
+            "parameterType": "STRING"
+          },
+          "model_name": {
+            "defaultValue": "gemini-2.5-flash-001",
+            "isOptional": true,
+            "parameterType": "STRING"
+          },
+          "offset": {
+            "parameterType": "NUMBER_INTEGER"
+          },
+          "project_id": {
+            "parameterType": "STRING"
+          },
+          "spanner_database": {
+            "parameterType": "STRING"
+          },
+          "spanner_instance": {
+            "parameterType": "STRING"
+          },
+          "spanner_table": {
+            "parameterType": "STRING"
+          },
+          "table_id": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    }
+  },
+  "deploymentSpec": {
+    "executors": {
+      "exec-create-batches": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "create_batches"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef create_batches(\n    project_id: str,\n    dataset_id: str,\n    table_id: str,\n    batch_size: int\n) -> list:\n    \"\"\"BigQuery\u306e\u30c7\u30fc\u30bf\u3092\u30d0\u30c3\u30c1\u306b\u5206\u5272\"\"\"\n    from google.cloud import bigquery\n\n    client = bigquery.Client(project=project_id)\n    query = f\"SELECT COUNT(*) as cnt FROM `{project_id}.{dataset_id}.{table_id}`\"\n    total_count = list(client.query(query))[0].cnt\n\n    batch_list = []\n    for offset in range(0, total_count, batch_size):\n        batch_list.append({\"offset\": offset, \"limit\": batch_size})\n\n    return batch_list\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      },
+      "exec-process-batch": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "process_batch"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-bigquery' 'google-cloud-spanner' 'google-cloud-aiplatform'  &&  python3 -m pip install --quiet --no-warn-script-location 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef process_batch(\n    project_id: str,\n    dataset_id: str,\n    table_id: str,\n    spanner_instance: str,\n    spanner_database: str,\n    spanner_table: str,\n    offset: int,\n    limit: int,\n    location: str = \"asia-northeast1\",\n    model_name: str = \"gemini-2.5-flash-001\"\n):\n    \"\"\"1\u30d0\u30c3\u30c1\u306e\u30c7\u30fc\u30bf\u3092\u51e6\u7406\uff1aBigQuery\u53d6\u5f97 -> LLM\u547c\u3073\u51fa\u3057 -> Spanner\u767b\u9332\"\"\"\n    from google.cloud import bigquery, spanner\n    import vertexai\n    from vertexai.generative_models import GenerativeModel\n    import asyncio\n    import json\n\n    # BigQuery\u304b\u3089\u30c7\u30fc\u30bf\u53d6\u5f97\n    bq_client = bigquery.Client(project=project_id)\n    query = f\"\"\"\n        SELECT * FROM `{project_id}.{dataset_id}.{table_id}`\n        LIMIT {limit} OFFSET {offset}\n    \"\"\"\n    rows = list(bq_client.query(query))\n    print(f\"Processing {len(rows)} rows (offset: {offset})\")\n\n    # Vertex AI\u521d\u671f\u5316\n    vertexai.init(project=project_id, location=location)\n    model = GenerativeModel(model_name)\n\n    # \u975e\u540c\u671f\u3067LLM\u547c\u3073\u51fa\u3057\n    async def generate_themes(row):\n        \"\"\"1\u884c\u306e\u30c7\u30fc\u30bf\u304b\u30896\u3064\u306e\u30c6\u30fc\u30de\u3092\u751f\u6210\"\"\"\n        try:\n            # \u30d7\u30ed\u30f3\u30d7\u30c8\u4f5c\u6210\uff08\u5b9f\u969b\u306e\u30c7\u30fc\u30bf\u69cb\u9020\u306b\u5408\u308f\u305b\u3066\u8abf\u6574\u3057\u3066\u304f\u3060\u3055\u3044\uff09\n            prompt = f\"\"\"\u4ee5\u4e0b\u306e\u30c7\u30fc\u30bf\u304b\u30896\u3064\u306e\u30c6\u30fc\u30de\u540d\u3092\u751f\u6210\u3057\u3066\u304f\u3060\u3055\u3044\u3002\nJSON\u5f62\u5f0f\u3067\u51fa\u529b\u3057\u3066\u304f\u3060\u3055\u3044: {{\"themes\": [\"\u30c6\u30fc\u30de1\", \"\u30c6\u30fc\u30de2\", \"\u30c6\u30fc\u30de3\", \"\u30c6\u30fc\u30de4\", \"\u30c6\u30fc\u30de5\", \"\u30c6\u30fc\u30de6\"]}}\n\n\u30c7\u30fc\u30bf: {dict(row)}\n\"\"\"\n            response = await model.generate_content_async(\n                prompt,\n                generation_config={\n                    \"temperature\": 0.7,\n                    \"max_output_tokens\": 1024,\n                }\n            )\n\n            # \u30ec\u30b9\u30dd\u30f3\u30b9\u304b\u3089\u30c6\u30fc\u30de\u3092\u62bd\u51fa\n            themes_text = response.text.strip()\n            # JSON\u90e8\u5206\u3092\u62bd\u51fa\uff08```json``` \u3067\u56f2\u307e\u308c\u3066\u3044\u308b\u5834\u5408\u306b\u5bfe\u5fdc\uff09\n            if \"```json\" in themes_text:\n                themes_text = themes_text.split(\"```json\")[1].split(\"```\")[0].strip()\n            elif \"```\" in themes_text:\n                themes_text = themes_text.split(\"```\")[1].split(\"```\")[0].strip()\n\n            themes_data = json.loads(themes_text)\n            themes = themes_data.get(\"themes\", [])\n\n            return {\n                \"id\": row.get(\"id\"),  # \u5b9f\u969b\u306eID\u5217\u540d\u306b\u5408\u308f\u305b\u3066\u8abf\u6574\n                \"themes\": json.dumps(themes, ensure_ascii=False),\n                \"success\": True\n            }\n        except Exception as e:\n            print(f\"Error processing row {row.get('id')}: {e}\")\n            return {\n                \"id\": row.get(\"id\"),\n                \"themes\": json.dumps([]),\n                \"success\": False,\n                \"error\": str(e)\n            }\n\n    async def process_all():\n        \"\"\"\u5168\u3066\u306e\u884c\u3092\u975e\u540c\u671f\u3067\u51e6\u7406\"\"\"\n        tasks = [generate_themes(row) for row in rows]\n        return await asyncio.gather(*tasks)\n\n    # \u4e26\u884c\u51e6\u7406\u5b9f\u884c\n    results = asyncio.run(process_all())\n\n    # \u6210\u529f\u3057\u305f\u7d50\u679c\u306e\u307f\u3092Spanner\u306b\u66f8\u304d\u8fbc\u307f\n    successful_results = [r for r in results if r.get(\"success\", False)]\n    print(f\"Successfully processed {len(successful_results)}/{len(results)} rows\")\n\n    # Spanner\u306b\u66f8\u304d\u8fbc\u307f\n    if successful_results:\n        spanner_client = spanner.Client(project=project_id)\n        instance = spanner_client.instance(spanner_instance)\n        database = instance.database(spanner_database)\n\n        with database.batch() as batch:\n            for result in successful_results:\n                batch.insert(\n                    table=spanner_table,\n                    columns=[\"id\", \"themes\"],  # \u5b9f\u969b\u306e\u30ab\u30e9\u30e0\u540d\u306b\u5408\u308f\u305b\u3066\u8abf\u6574\n                    values=[[result[\"id\"], result[\"themes\"]]]\n                )\n        print(f\"Inserted {len(successful_results)} rows into Spanner\")\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "description": "BigQuery\u306e\u30c7\u30fc\u30bf\u304b\u3089LLM\u3067\u30c6\u30fc\u30de\u3092\u751f\u6210\u3057\u3066Spanner\u306b\u4fdd\u5b58",
+    "name": "bigquery-llm-spanner-pipeline"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "create-batches": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-create-batches"
+          },
+          "inputs": {
+            "parameters": {
+              "batch_size": {
+                "componentInputParameter": "batch_size"
+              },
+              "dataset_id": {
+                "componentInputParameter": "dataset_id"
+              },
+              "project_id": {
+                "componentInputParameter": "project_id"
+              },
+              "table_id": {
+                "componentInputParameter": "table_id"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "create-batches"
+          }
+        },
+        "for-loop-1": {
+          "componentRef": {
+            "name": "comp-for-loop-1"
+          },
+          "dependentTasks": [
+            "create-batches"
+          ],
+          "inputs": {
+            "parameters": {
+              "pipelinechannel--create-batches-Output": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "Output",
+                  "producerTask": "create-batches"
+                }
+              },
+              "pipelinechannel--dataset_id": {
+                "componentInputParameter": "dataset_id"
+              },
+              "pipelinechannel--location": {
+                "componentInputParameter": "location"
+              },
+              "pipelinechannel--model_name": {
+                "componentInputParameter": "model_name"
+              },
+              "pipelinechannel--project_id": {
+                "componentInputParameter": "project_id"
+              },
+              "pipelinechannel--spanner_database": {
+                "componentInputParameter": "spanner_database"
+              },
+              "pipelinechannel--spanner_instance": {
+                "componentInputParameter": "spanner_instance"
+              },
+              "pipelinechannel--spanner_table": {
+                "componentInputParameter": "spanner_table"
+              },
+              "pipelinechannel--table_id": {
+                "componentInputParameter": "table_id"
+              }
+            }
+          },
+          "iteratorPolicy": {
+            "parallelismLimit": 50
+          },
+          "parameterIterator": {
+            "itemInput": "pipelinechannel--create-batches-Output-loop-item",
+            "items": {
+              "inputParameter": "pipelinechannel--create-batches-Output"
+            }
+          },
+          "taskInfo": {
+            "name": "for-loop-1"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "batch_size": {
+          "defaultValue": 100.0,
+          "description": "1\u30d0\u30c3\u30c1\u3042\u305f\u308a\u306e\u51e6\u7406\u4ef6\u6570",
+          "isOptional": true,
+          "parameterType": "NUMBER_INTEGER"
+        },
+        "dataset_id": {
+          "description": "BigQuery\u30c7\u30fc\u30bf\u30bb\u30c3\u30c8ID",
+          "parameterType": "STRING"
+        },
+        "location": {
+          "defaultValue": "asia-northeast1",
+          "description": "\u30ea\u30fc\u30b8\u30e7\u30f3",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "model_name": {
+          "defaultValue": "gemini-2.5-flash-001",
+          "description": "\u4f7f\u7528\u3059\u308bLLM\u30e2\u30c7\u30eb\u540d",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "project_id": {
+          "description": "GCP\u30d7\u30ed\u30b8\u30a7\u30af\u30c8ID",
+          "parameterType": "STRING"
+        },
+        "spanner_database": {
+          "description": "Spanner\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u540d",
+          "parameterType": "STRING"
+        },
+        "spanner_instance": {
+          "description": "Spanner\u30a4\u30f3\u30b9\u30bf\u30f3\u30b9\u540d",
+          "parameterType": "STRING"
+        },
+        "spanner_table": {
+          "description": "Spanner\u30c6\u30fc\u30d6\u30eb\u540d",
+          "parameterType": "STRING"
+        },
+        "table_id": {
+          "description": "BigQuery\u30c6\u30fc\u30d6\u30ebID",
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.15.2"
+}
